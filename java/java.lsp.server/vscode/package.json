@@ -36,11 +36,11 @@
 					"default": null,
 					"description": "Specifies JDK for the Apache NetBeans Language Server"
 				},
-                                "netbeans.verbose": {
-                                        "type": "boolean",
-                                        "default": false,
-                                        "description": "Enables verbose messages from the Apache NetBeans Language Server"
-                                }
+				"netbeans.verbose": {
+					"type": "boolean",
+					"default": false,
+					"description": "Enables verbose messages from the Apache NetBeans Language Server"
+				}
 			}
 		},
 		"breakpoints": [
