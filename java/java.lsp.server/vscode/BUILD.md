@@ -20,6 +20,13 @@
     under the License.
 
 -->
+## Prerequisities
+It is necessary to have installed:
+- Ant, latest version
+- Maven, latest version
+- node.js, latest LTS (to build VSIX)
+
+It is recommended to build using JDK 8.
 
 ## Getting the Code
 
@@ -35,11 +42,20 @@ To build the VS Code extension invoke:
 ```bash
 netbeans$ ant build
 netbeans$ cd java/java.lsp.server
-java.lsp.server$ ant build-vscode-ext -D3rdparty.modules=.*nbjavac.*
+java.lsp.server$ ant build-vscode-ext
+```
+The resulting extension is then in the `build` directory, with the `.vsix` extension.
+#### Build Options
+- `-Dvsix.version=x.y.z`can be used to set release version. E.g. set this option to `12.3.0` to get proper NetBeans release version for extension. 
+- `-D3rdparty.modules=.*nbjavac.*` can be set to include nb-javac which allows extension to run out of the box on JDK8. For **zsh** it is necessary to wrap it: `-D3rdparty.modules='.*nbjavac.*'`
+
+The build of NetBeans VSCode extension with nb-javac included, for version 12.3.0 then looks like this:
+```bash
+netbeans$ ant build
+netbeans$ cd java/java.lsp.server
+java.lsp.server$ ant build-vscode-ext -D3rdparty.modules=.*nbjavac.* -Dvsix.version=12.3.0
 ```
 
-The `3rdparty.modules` property doesn't have to be set at all.
-The resulting extension is then in the `build` directory, with the `.vsix` extension.
 
 ### Building for Development
 
@@ -62,10 +78,32 @@ for running and debugging below.
 Often it is also important to properly clean everything. Use:
 
 ```bash
-java.lsp.server$ ant clean-vscode-server
+java.lsp.server$ ant clean-vscode-ext
 java.lsp.server$ cd ../..
 netbeans$ ant clean
 ```
+
+### Testing
+
+The `java.lsp.server` module has classical (as other NetBeans modules) tests.
+The most important one is [ServerTest](https://github.com/apache/netbeans/blob/master/java/java.lsp.server/test/unit/src/org/netbeans/modules/java/lsp/server/protocol/ServerTest.java)
+which simulates LSP communication and checks expected replies. In addition to
+that there are VS Code integration tests - those launch VS Code with the
+VSNetBeans extension and check behavior of the TypeScript integration code:
+
+```bash
+java.lsp.server$ ant build-vscode-ext # first and then
+java.lsp.server$ ant test-vscode-ext
+```
+
+In case you are behind a proxy, you may want to run the tests with
+
+```bash
+java.lsp.server$ npm_config_https_proxy=http://your.proxy.com:port ant test-vscode-ext
+```
+
+when executing the tests for the first time. That shall overcome the proxy
+and download an instance of `code` execute the tests on.
 
 ## Running and Debugging
 
