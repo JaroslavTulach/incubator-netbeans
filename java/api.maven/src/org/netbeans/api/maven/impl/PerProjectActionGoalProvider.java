@@ -17,16 +17,16 @@
  * under the License.
  */
 
-package org.netbeans.api.maven;
+package org.netbeans.api.maven.impl;
 
-import java.io.IOException;
 import org.netbeans.modules.maven.spi.actions.AbstractMavenActionsProvider;
 import java.io.InputStream;
+import org.netbeans.api.maven.MavenActions;
 import org.netbeans.api.project.Project;
-import org.netbeans.spi.maven.NbActionsProvider;
+import org.netbeans.modules.maven.api.NbMavenProject;
 import org.netbeans.spi.project.LookupProvider.Registration.ProjectType;
 import org.netbeans.spi.project.ProjectServiceProvider;
-import org.openide.filesystems.FileObject;
+import org.openide.util.Lookup;
 
 @ProjectServiceProvider(
     service=org.netbeans.modules.maven.spi.actions.MavenActionsProvider.class,
@@ -46,19 +46,25 @@ public final class PerProjectActionGoalProvider extends AbstractMavenActionsProv
 
     @Override
     protected InputStream getActionDefinitionStream() {
-        FileObject pom = project.getProjectDirectory().getFileObject("pom.xml");
-        if (pom == null) {
+        NbMavenProject maven = project.getLookup().lookup(NbMavenProject.class);
+        if (maven == null) {
             return null;
         }
-        for (NbActionsProvider nap : project.getLookup().lookupAll(NbActionsProvider.class)) {
-            InputStream is = null;
-            try {
-                is = nap.findActionsFor(pom);
-                if (is != null) {
-                    return is;
+        for (MavenActions info : project.getLookup().lookupAll(MavenActions.class)) {
+            if (maven.hasPlugin(info.getPluginIds())) {
+                ClassLoader l = Lookup.getDefault().lookup(ClassLoader.class);
+                if (l == null) {
+                    l = Thread.currentThread().getContextClassLoader();
                 }
-            } catch (IOException ex) {
-                // go on
+                if (l == null) {
+                    l = info.getClass().getClassLoader();
+                }
+                
+                InputStream is = l.getResourceAsStream(info.getResource());
+                if (is == null) {
+                    throw new NullPointerException("Cannot find resource " + info.getResource());
+                }
+                return is;
             }
         }
         return null;

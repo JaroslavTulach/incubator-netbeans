@@ -37,6 +37,7 @@ import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenExecutionResult;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Model;
+import org.apache.maven.model.Plugin;
 import org.apache.maven.model.building.ModelBuildingException;
 import org.apache.maven.project.MavenProject;
 import org.netbeans.api.annotations.common.NonNull;
@@ -60,6 +61,7 @@ import org.openide.filesystems.FileEvent;
 import org.openide.filesystems.FileObject;
 import org.openide.filesystems.FileRenameEvent;
 import org.openide.filesystems.FileUtil;
+import org.openide.util.Exceptions;
 import org.openide.util.Lookup;
 import org.openide.util.NbBundle.Messages;
 import org.openide.util.RequestProcessor;
@@ -352,6 +354,23 @@ public final class NbMavenProject {
     public Model getRawModel() throws ModelBuildingException {
         return project.getRawModel();
     }
+    
+    public final boolean hasPlugin(String[] pluginIds) {
+        try {
+            final List<Plugin> plugins = getRawModel().getBuild().getPlugins();
+            for (String id : pluginIds) {
+                for (Plugin p : plugins) {
+                    if (id.equals(p.getArtifactId())) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (ModelBuildingException ex) {
+            return false;
+        }
+    }
+
     
     /**
      * 

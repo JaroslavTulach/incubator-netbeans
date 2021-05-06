@@ -108,8 +108,8 @@
                 </test-type>
             </test-dependencies>
             <public-packages>
+                <package>org.netbeans.api.maven</package>
                 <package>org.netbeans.api.maven.archetype</package>
-                <package>org.netbeans.spi.maven</package>
             </public-packages>
         </data>
     </configuration>
