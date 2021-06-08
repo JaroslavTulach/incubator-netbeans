@@ -18,6 +18,7 @@
  */
 package org.netbeans.modules.java.lsp.server.protocol;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
@@ -46,6 +47,33 @@ public interface NbCodeLanguageClient extends LanguageClient {
     @JsonRequest("nodes/delete")
     public CompletableFuture<String> nodeQuery(String params);
     
+    /**
+     * Shows a selection list allowing multiple selections.
+     *
+     * @param params input parameters
+     * @return selected items
+     */
+    @JsonRequest("window/showQuickPick")
+    public CompletableFuture<List<QuickPickItem>> showQuickPick(@NonNull ShowQuickPickParams params);
+
+    /**
+     * Shows an input box to ask the user for input.
+     *
+     * @param params input parameters
+     * @return input value
+     */
+    @JsonRequest("window/showInputBox")
+    public CompletableFuture<String> showInputBox(@NonNull ShowInputBoxParams params);
+
+    /**
+     * Notifies client of running tests progress. Provides information about a test suite being loaded,
+     * started, completed or skipped during a test run.
+     *
+     * @param params test run information
+     */
+    @JsonNotification("window/notifyTestProgress")
+    public void notifyTestProgress(@NonNull TestProgressParams params);
+
     /**
      * Returns extended code capabilities.
      * @return code capabilities.

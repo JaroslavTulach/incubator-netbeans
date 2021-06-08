@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as ps from 'ps-node';
 import { spawn, ChildProcessByStdio, spawnSync, SpawnSyncReturns } from 'child_process';
 import { Readable } from 'stream';
 
@@ -8,6 +9,7 @@ import { Readable } from 'stream';
 // as well as import your extension to test it
 import * as vscode from 'vscode';
 import * as myExtension from '../../extension';
+import { TextDocument, TextEditor, Uri } from 'vscode';
 
 suite('Extension Test Suite', () => {
     vscode.window.showInformationMessage('Cleaning up workspace.');
@@ -33,11 +35,35 @@ suite('Extension Test Suite', () => {
     });
 
     test('Find clusters', async () => {
-        let clusters = myExtension.findClusters('non-existent');
-        assert.strictEqual(clusters.length, 6, 'six clusters found: ' + clusters);
-        let nbcode = vscode.extensions.getExtension('asf.apache-netbeans-java');
+        const nbcode = vscode.extensions.getExtension('asf.apache-netbeans-java');
         assert.ok(nbcode);
-        for (let c of clusters) {
+
+        const extraCluster = path.join(nbcode.extensionPath, "nbcode", "extra");
+        let clusters = myExtension.findClusters('non-existent').
+            // ignore 'extra' cluster in the extension path, since nbjavac is there during development:
+            filter(s => !s.startsWith(extraCluster));
+
+
+        let found : string[] = [];
+        function assertCluster(name : string) {
+            for (let c of clusters) {
+                if (c.endsWith('/' + name)) {
+                    found.push(c);
+                    return;
+                }
+            }
+            assert.fail(`Cannot find ${name} among ${clusters}`);
+        }
+
+        assertCluster('extide');
+        assertCluster('ide');
+        assertCluster('java');
+        assertCluster('nbcode');
+        assertCluster('platform');
+        assertCluster('webcommon');
+        assertCluster('harness');
+
+        for (let c of found) {
             assert.ok(c.startsWith(nbcode.extensionPath), `All extensions are below ${nbcode.extensionPath}, but: ${c}`);
         }
     });
@@ -97,6 +123,185 @@ class Main {
     test("Compile workspace6", async() => demo(6));
     test("Compile workspace7", async() => demo(7));
     test("Compile workspace8", async() => demo(8));
+
+    /**
+     * Checks that maven-managed process can be started, and forcefully terminated by vscode
+     * although it does not run in debugging mode.
+     */
+    async function mavenTerminateWithoutDebugger() {
+        let folder: string = assertWorkspace();
+
+        await fs.promises.writeFile(path.join(folder, 'pom.xml'), `
+    <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>org.netbeans.demo.vscode.t1</groupId>
+    <artifactId>basicapp</artifactId>
+    <version>1.0</version>
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+    </project>
+        `);
+
+        let pkg = path.join(folder, 'src', 'main', 'java', 'pkg');
+        let mainJava = path.join(pkg, 'Main.java');
+
+        await fs.promises.mkdir(pkg, { recursive: true });
+
+        await fs.promises.writeFile(mainJava, `
+    package pkg;
+    class Main {
+    public static void main(String... args) throws Exception {
+        System.out.println("Endless wait...");
+        while (true) {
+            Thread.sleep(1000);
+        }
+    }
+    }
+        `);
+        vscode.workspace.saveAll();
+        let u : Uri = vscode.Uri.file(mainJava);
+        let doc : TextDocument = await vscode.workspace.openTextDocument(u);
+        let e : TextEditor = await vscode.window.showTextDocument(doc);
+
+        try {
+            let terminated = false;
+            let r = new Promise((resolve, reject) => {
+                function waitUserApplication(cnt : number, running: boolean, cb : () => void) {
+                    ps.lookup({
+                        command: "^.*[/\\\\]java",
+                        arguments: "pkg.Main"
+                    }, (err, list ) => {
+                        let success : boolean = (list && list.length > 0) == running;
+                        if (success) {
+                            cb();
+                        } else {
+                            if (cnt == 0) {
+                                reject(new Error("Timeout waiting for user application"));
+                                return;
+                            }
+                            setTimeout(() => waitUserApplication(cnt - 1, running, cb), 100);
+                            return;
+                        }
+                    });
+                }
+                
+                function onProcessStarted() {
+                    console.log("Test: invoking debug.stop");
+                    // attempt to terminate:
+                    vscode.commands.executeCommand("workbench.action.debug.stop").
+                        then(() => waitUserApplication(5, false, () => resolve(true)));
+                }
+                console.log("Test: invoking debug debug.run");
+                const workspaceFolder = (vscode.workspace.workspaceFolders!)[0];
+                vscode.debug.startDebugging(workspaceFolder, {type: "java8+", name: "Launch Java 8+ App", request: "launch"}, {}).
+                    then(() => waitUserApplication(5, true, onProcessStarted));
+            });
+            return r;
+        } catch (error) {
+            dumpJava();
+            throw error;
+        }
+    }
+
+    test("Maven run termination", async() => mavenTerminateWithoutDebugger());
+
+    async function getProjectInfo() {
+        let folder: string = assertWorkspace();
+
+        await fs.promises.writeFile(path.join(folder, 'pom.xml'), `
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>org.netbeans.demo.vscode.t1</groupId>
+    <artifactId>basicapp</artifactId>
+    <version>1.0</version>
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+</project>
+		`);
+
+        let pkg = path.join(folder, 'src', 'main', 'java', 'pkg');
+        let resources = path.join(folder, 'src', 'main', 'resources');
+        let mainJava = path.join(pkg, 'Main.java');
+
+        await fs.promises.mkdir(pkg, { recursive: true });
+        await fs.promises.mkdir(resources, { recursive: true });
+
+        await fs.promises.writeFile(mainJava, `
+package pkg;
+class Main {
+	public static void main(String... args) {
+		System.out.println("Hello World!");
+	}
+}
+		`);
+
+        vscode.workspace.saveAll();
+
+        try {
+            console.log("Test: get project java source roots");
+            let res: any = await vscode.commands.executeCommand("java.get.project.source.roots", Uri.file(folder).toString());
+            console.log(`Test: get project java source roots finished with ${res}`);
+            assert.ok(res, "No java source root rertuned");
+            assert.strictEqual(res.length, 1, `Invalid number of java roots returned`);
+            assert.strictEqual(res[0], path.join('file:', folder, 'src', 'main', 'java') + path.sep, `Invalid java source root returned`);
+
+            console.log("Test: get project resource roots");
+            res = await vscode.commands.executeCommand("java.get.project.source.roots", Uri.file(folder).toString(), 'resources');
+            console.log(`Test: get project resource roots finished with ${res}`);
+            assert.ok(res, "No resource root returned");
+            assert.strictEqual(res.length, 1, `Invalid number of resource roots returned`);
+            assert.strictEqual(res[0], path.join('file:', resources) + path.sep, `Invalid resource root returned`);
+
+            console.log("Test: get project compile classpath");
+            res = await vscode.commands.executeCommand("java.get.project.classpath", Uri.file(folder).toString());
+            console.log(`Test: get project compile classpath finished with ${res}`);
+            assert.ok(res, "No compile classpath returned");
+            assert.strictEqual(res.length, 1, `Invalid number of compile classpath roots returned`);
+            assert.strictEqual(res[0], path.join('file:', folder, 'target', 'classes') + path.sep, `Invalid compile classpath root returned`);
+
+            console.log("Test: get project source classpath");
+            res = await vscode.commands.executeCommand("java.get.project.classpath", Uri.file(folder).toString(), 'SOURCE');
+            console.log(`Test: get project source classpath finished with ${res}`);
+            assert.ok(res, "No source classpath returned");
+            assert.strictEqual(res.length, 1, `Invalid number of source classpath roots returned`);
+            assert.strictEqual(res[0], path.join('file:', folder, 'src', 'main', 'java') + path.sep, `Invalid source classpath root returned`);
+
+            console.log("Test: get project boot classpath");
+            res = await vscode.commands.executeCommand("java.get.project.classpath", Uri.file(folder).toString(), 'BOOT');
+            console.log(`Test: get project boot classpath finished with ${res}`);
+            assert.ok(res, "No boot classpath returned");
+            assert.ok(res.length > 0, `Invalid number of boot classpath roots returned`);
+
+            console.log("Test: get project boot source classpath");
+            res = await vscode.commands.executeCommand("java.get.project.classpath", Uri.file(folder).toString(), 'BOOT', true);
+            console.log(`Test: get project boot source classpath finished with ${res}`);
+            assert.ok(res, "No boot source classpath returned");
+            assert.ok(res.length > 0, `Invalid number of boot source classpath roots returned`);
+
+            console.log("Test: get all project packages");
+            res = await vscode.commands.executeCommand("java.get.project.packages", Uri.file(folder).toString());
+            console.log(`Test: get all project packages finished with ${res}`);
+            assert.ok(res, "No packages returned");
+            assert.ok(res.length > 0, `Invalid number of packages returned`);
+
+            console.log("Test: get project source packages");
+            res = await vscode.commands.executeCommand("java.get.project.packages", Uri.file(folder).toString(), true);
+            console.log(`Test: get project source packages finished with ${res}`);
+            assert.ok(res, "No packages returned");
+            assert.strictEqual(res.length, 1, `Invalid number of packages returned`);
+            assert.strictEqual(res[0], 'pkg', `Invalid package returned`);
+        } catch (error) {
+            dumpJava();
+            throw error;
+        }
+    }
+
+    test("Get project sources, classpath, and packages", async() => getProjectInfo());
+
 });
 
 function assertWorkspace(): string {
